@@ -13,7 +13,7 @@ export const onReady = (waSocket: WaSocket, cb: () => any) => {
 
 export const syncBlockedList = (waSocket: WaSocket) => {
 	onReady(waSocket, async () => {
-		const blockedList = await waSocket.fetchBlocklist();
+		const blockedList = (await waSocket.fetchBlocklist()).filter((x): x is string => x !== undefined);
 		context.upsert({
 			blockedList,
 		});
