@@ -90,7 +90,10 @@ export const privateChatSchema = {
 	},
 };
 
-export type ContactModel = ContactPayload;
+export type ContactModel = ContactPayload & {
+	/** ID in LID format (@lid), if known */
+	lid?: string;
+};
 
 export const contactSchema = {
 	name: 'contact',
@@ -103,6 +106,7 @@ export const contactSchema = {
 		hostAdded: 'bool',
 		isGroup: 'bool',
 		isHostAccount: 'bool',
+		lid: 'string?',
 	},
 };
 

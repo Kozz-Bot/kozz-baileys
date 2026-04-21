@@ -1,7 +1,7 @@
 import { WAMessage, WASocket, proto } from 'baileys';
 import { ContactPayload, GroupChat, MessageReceived } from 'kozz-types';
 import Context from 'src/Context';
-import { getContact } from 'src/Store/ContactStore';
+import { getContact, resolveJidFromLid } from 'src/Store/ContactStore';
 import { getMessage, saveMessage } from 'src/Store/MessageStore';
 import { GroupChatModel } from 'src/Store/models';
 import { downloadMediaFromMessage } from 'src/util/media';
@@ -26,7 +26,8 @@ export const serializeMessageId = (messageId: string): proto.IMessageKey => {
 };
 
 export const createContactPayload = async (
-	message: WAMessage
+	message: WAMessage,
+	waSocket?: WASocket
 ): Promise<ContactPayload> => {
 	const getContactId = (message: WAMessage) => {
 		if (message.key.fromMe) {
@@ -35,8 +36,18 @@ export const createContactPayload = async (
 		return message.key.participant || message.participant || message.key.remoteJid!;
 	};
 
-	const contactId = clearContact(getContactId(message));
+	let contactId = clearContact(getContactId(message));
 	const isBlocked = Context.get('blockedList').includes(message.key.participant!);
+
+	// If the JID is in LID format, resolve it to a phone-number JID via DB mapping
+	if (contactId.endsWith('@lid')) {
+		const resolvedPn = await resolveJidFromLid(contactId);
+		if (resolvedPn) {
+			contactId = resolvedPn;
+		} else {
+			console.warn(`[LID] Could not resolve LID ${contactId} to a phone-number JID (mapping not yet known)`);
+		}
+	}
 
 	return {
 		hostAdded: false,
@@ -131,7 +142,7 @@ export const createMessagePayload = async (
 	handleEditMessage(message); // check if is edit message
 
 	const media = await downloadMediaFromMessage(message, waSocket);
-	const contact = await createContactPayload(message);
+	const contact = await createContactPayload(message, waSocket);
 	const taggedContact = await createtTaggedContactPayload(message);
 
 	const messageBody =
@@ -149,14 +160,14 @@ export const createMessagePayload = async (
 	const messageType = message.message?.extendedTextMessage
 		? 'TEXT'
 		: message.message?.audioMessage
-		? 'AUDIO'
-		: message.message?.stickerMessage
-		? 'STICKER'
-		: message.message?.videoMessage
-		? 'VIDEO'
-		: message.message?.imageMessage
-		? 'IMAGE'
-		: 'TEXT';
+			? 'AUDIO'
+			: message.message?.stickerMessage
+				? 'STICKER'
+				: message.message?.videoMessage
+					? 'VIDEO'
+					: message.message?.imageMessage
+						? 'IMAGE'
+						: 'TEXT';
 
 	const contextInfo = (
 		message.message?.extendedTextMessage ||
@@ -194,14 +205,14 @@ export const createMessagePayload = async (
 			quotedMessage.messageType = contextInfo?.quotedMessage?.extendedTextMessage
 				? 'TEXT'
 				: contextInfo?.quotedMessage?.audioMessage
-				? 'AUDIO'
-				: contextInfo?.quotedMessage?.stickerMessage
-				? 'STICKER'
-				: contextInfo?.quotedMessage?.videoMessage
-				? 'VIDEO'
-				: contextInfo?.quotedMessage?.imageMessage
-				? 'IMAGE'
-				: 'TEXT';
+					? 'AUDIO'
+					: contextInfo?.quotedMessage?.stickerMessage
+						? 'STICKER'
+						: contextInfo?.quotedMessage?.videoMessage
+							? 'VIDEO'
+							: contextInfo?.quotedMessage?.imageMessage
+								? 'IMAGE'
+								: 'TEXT';
 
 			quotedMessage.isViewOnce =
 				(
@@ -224,7 +235,7 @@ export const createMessagePayload = async (
 		body: messageBody,
 		boundaryName: process.env.BOUNDARY_NAME ?? '',
 		id,
-		contact: await createContactPayload(message),
+		contact: await createContactPayload(message, waSocket),
 		from: contact.id,
 		fromHostAccount: contact.isHostAccount,
 		isViewOnce: false,

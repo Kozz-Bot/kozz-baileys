@@ -3,6 +3,9 @@ import { ContactPayload, MessageReceived } from 'kozz-types';
 
 export const createFolderOnInit = () => {
 	tryCreateFolder(`./medias`);
+	tryCreateFolder(`./debug`);
+	tryCreateFolder(`./debug/lottie`);
+	tryCreateFolder(`./debug/lottie/generated`);
 };
 
 const tryCreateFolder = (path: string) => {

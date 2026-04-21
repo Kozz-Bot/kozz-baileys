@@ -26,7 +26,7 @@ import {
 	createMessagePayload,
 } from 'src/PayloadTransformers';
 import createBoundary from 'kozz-boundary-maker';
-import { saveContact } from 'src/Store/ContactStore';
+import { saveContact, saveLidMapping } from 'src/Store/ContactStore';
 import { updateChatMetadata } from 'src/Store/MetadataStore';
 import { getMessagePreview } from 'src/util/utility';
 import { groupMemo } from 'src/util/groupMemo';
@@ -157,8 +157,46 @@ const sessionEvents = (
 			payload.chats.forEach(async (chat: any) => {
 				updateChatUnreadCount(chat.id, chat.unreadCount);
 			});
+
+			// Persist LID ↔ PN mappings that arrive during history sync
+			if (Array.isArray(payload.lidPnMappings)) {
+				payload.lidPnMappings.forEach(async ({ pn, lid }: { pn: string; lid: string }) => {
+					if (pn && lid) {
+						await saveLidMapping(pn, lid);
+					}
+				});
+			}
 		} catch (e) {
 			console.warn(e);
+		}
+	});
+
+	// Persist incremental LID ↔ PN mappings pushed by WhatsApp at runtime.
+	// Cast to `any` because the installed baileys version doesn't declare this
+	// event in its BaileysEventMap yet, but it is emitted at runtime.
+	(waSocket.ev as any).on('lid-mapping.update', async (mapping: any) => {
+		try {
+			const { pn, lid } = mapping;
+			if (pn && lid) {
+				await saveLidMapping(pn, lid);
+				console.log(`[LID] Mapped lid=${lid} → pn=${pn}`);
+			}
+		} catch (e) {
+			console.warn('[LID] lid-mapping.update error:', e);
+		}
+	});
+
+	// WhatsApp pushes LID→PN mapping when a user shares their phone number
+	// (e.g. after a group message from a LID-only contact).
+	// This is the primary real-time source of LID↔PN resolution.
+	waSocket.ev.on('chats.phoneNumberShare' as any, async ({ lid, jid }: { lid: string; jid: string }) => {
+		try {
+			if (lid && jid) {
+				await saveLidMapping(jid, lid);
+				console.log(`[LID] chats.phoneNumberShare: lid=${lid} → pn=${jid}`);
+			}
+		} catch (e) {
+			console.warn('[LID] chats.phoneNumberShare error:', e);
 		}
 	});
 

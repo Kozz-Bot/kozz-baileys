@@ -7,6 +7,7 @@ import { createFolderOnInit } from './util/utility';
 import { createResourceGatheres } from './Resource';
 import { CronJob } from 'cron';
 import fs from 'fs/promises';
+import { getQuotedMessageId } from './util/message';
 
 export const boundary = createBoundary({
 	url: process.env.GATEWAY_URL || 'ws://localhost:4521',
@@ -91,6 +92,41 @@ initSession(boundary).then(waSocket => {
 
 	boundary.hanldeDeleteMessage(payload => {
 		baileys.deleteMessage(payload.messageId);
+	});
+
+	waSocket.ev.on('messages.upsert', async (upsert: any) => {
+		for (const msg of upsert.messages ?? []) {
+			const body =
+				msg.message?.conversation ||
+				msg.message?.extendedTextMessage?.text ||
+				msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+				'';
+
+			if (body.trim() !== '/lottie') {
+				continue;
+			}
+
+			const chatId = msg.key.remoteJid;
+			const quotedMessageId = getQuotedMessageId(msg);
+			if (!chatId) {
+				continue;
+			}
+
+			if (!quotedMessageId) {
+				await baileys.sendText(
+					chatId,
+					'Quote a sticker with /lottie so I can generate a rotating Lottie test.',
+					msg.key.id
+				);
+				continue;
+			}
+
+			await baileys.sendQuotedStickerAsGeneratedLottie(
+				chatId,
+				quotedMessageId,
+				msg.key.id
+			);
+		}
 	});
 
 	createResourceGatheres(boundary, baileys);

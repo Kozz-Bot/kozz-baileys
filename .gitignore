@@ -15,3 +15,5 @@ creds
 .codegpt
 creds.bkp/
 .codegpt
+debug/lottie/
+package-lock.json
