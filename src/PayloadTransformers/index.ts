@@ -135,6 +135,16 @@ export const handleEditMessage = async (message: WAMessage) => {
 	}
 };
 
+const normalizeMessageTimestamp = (messageTimestamp: WAMessage['messageTimestamp']) => {
+	const numericTimestamp = Number(messageTimestamp);
+
+	if (!Number.isFinite(numericTimestamp) || numericTimestamp <= 0) {
+		return new Date().getTime();
+	}
+
+	return numericTimestamp < 1e12 ? numericTimestamp * 1000 : numericTimestamp;
+};
+
 export const createMessagePayload = async (
 	message: WAMessage,
 	waSocket: WASocket
@@ -251,8 +261,7 @@ export const createMessagePayload = async (
 			.normalize('NFKD')
 			.replace(/[\u0300-\u036f]/g, ''),
 		taggedContacts: taggedContact,
-		timestamp:
-			new Date(Number(message.messageTimestamp)).getTime() || new Date().getTime(),
+		timestamp: normalizeMessageTimestamp(message.messageTimestamp),
 		taggedConctactFriendlyBody: taggedConctactFriendlyBody,
 		media,
 	};

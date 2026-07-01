@@ -597,6 +597,16 @@ const getMarkdownFor = (variant: StyleVariant, position: 'begin' | 'end') => {
 	return markdownMap[position][variant];
 };
 
+const sanitizeTableCell = (value: unknown) => {
+	return String(value ?? '')
+		.replace(/\r?\n/g, ' ')
+		.replace(/\t/g, '    ');
+};
+
+const stringifyTableRow = (cells: unknown[]) => {
+	return cells.map(sanitizeTableCell).join('\t');
+};
+
 export const inlineCommandMapFunctions = (): Partial<InlineCommandMap> => {
 	const mention = async (
 		companion: CompanionObject,
@@ -676,13 +686,50 @@ export const inlineCommandMapFunctions = (): Partial<InlineCommandMap> => {
 		};
 	};
 
+	const table = async (
+		companion: CompanionObject,
+		data: { rows: unknown[][]; trailingNewline?: boolean },
+		payload: any
+	) => {
+		const rows = Array.isArray(data.rows) ? data.rows : [];
+		const stringValue = rows.map(row => stringifyTableRow(row)).join('\n')
+			+ (data.trailingNewline ? '\n' : '');
+
+		return {
+			companion: {
+				mentions: [...companion.mentions],
+			},
+			stringValue,
+		};
+	};
+
+	const table_row = async (
+		companion: CompanionObject,
+		data: { cells: unknown[]; newline?: boolean },
+		payload: any
+	) => {
+		const cells = Array.isArray(data.cells) ? data.cells : [];
+		const stringValue = stringifyTableRow(cells) + (data.newline ?? true ? '\n' : '');
+
+		return {
+			companion: {
+				mentions: [...companion.mentions],
+			},
+			stringValue,
+		};
+	};
+
 	return {
 		mention,
 		invisiblemention,
 		tageveryone,
 		begin_style,
 		end_style,
-	};
+		// `kozz-boundary-maker` accepts arbitrary command names at runtime;
+		// these extra helpers let us emit WhatsApp-renderable TSV tables.
+		table,
+		table_row,
+	} as Partial<InlineCommandMap>;
 };
 
 export default baileysFunctions;

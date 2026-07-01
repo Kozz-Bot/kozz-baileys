@@ -9,6 +9,7 @@ import {
 	getUnreadCount,
 } from 'src/Store/ChatStore';
 import { getContact } from 'src/Store/ContactStore';
+import { getRecentChatMessages } from 'src/Store/MessageStore';
 import { getChatOrder } from 'src/Store/MetadataStore';
 
 export const createResourceGatheres = (
@@ -100,6 +101,22 @@ export const createResourceGatheres = (
 		return getAllPrivateChats();
 	};
 
+	const _getRecentChatMessages = async ({
+		chatId,
+		limit,
+		excludeMessageId,
+	}: {
+		chatId?: string;
+		limit?: number;
+		excludeMessageId?: string;
+	}) => {
+		if (!chatId) {
+			return console.warn('Tried to fetch recent messages but no chatId was provided');
+		}
+
+		return getRecentChatMessages({ chatId, limit, excludeMessageId });
+	};
+
 	boundary.onAskResource('contact_profile_pic', _getProfilePicUrl);
 	boundary.onAskResource('group_chat_info', _getGroupChatInfo);
 	boundary.onAskResource('group_admin_list', _groupAdminList);
@@ -110,4 +127,5 @@ export const createResourceGatheres = (
 	boundary.onAskResource('chat_status', _chatStatus);
 	boundary.onAskResource('all_groups', _getAllGroups);
 	boundary.onAskResource('all_private_chats', _getAllPrivateChats);
+	boundary.onAskResource('recent_chat_messages', _getRecentChatMessages);
 };

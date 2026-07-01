@@ -94,13 +94,37 @@ export const initDatabase = () => {
 		try {
 			const objs = instance
 				.objects(entityType)
-				.sorted(sortField.toString(), sortDirection === 'asc')
+				.sorted(sortField.toString(), sortDirection === 'des')
 				.toJSON() as EntityMap[Type][];
 
 			return limit === 0 ? objs : objs.slice(0, limit);
 		} catch (e) {
 			console.warn(
 				`Error while fetcing ${entityType}, sorting ${sortField.toString()} in ${sortDirection}. No database transaction was done. Error = ${e}`
+			);
+		}
+	};
+
+	const getFilteredSorted = <Type extends keyof EntityMap>(
+		entityType: Type,
+		query: string,
+		queryArgs: unknown[],
+		sortField: keyof EntityMap[Type],
+		sortDirection: 'asc' | 'des' = 'asc',
+		limit = 0
+	) => {
+		try {
+			const objs = instance
+				.objects(entityType)
+				.filtered(query, ...queryArgs)
+				.sorted(sortField.toString(), sortDirection === 'des');
+
+			const limitedObjs = limit === 0 ? objs : objs.slice(0, limit);
+
+			return limitedObjs.map(obj => obj.toJSON() as EntityMap[Type]);
+		} catch (e) {
+			console.warn(
+				`Error while fetcing ${entityType}, filtering ${query}, sorting ${sortField.toString()} in ${sortDirection}. No database transaction was done. Error = ${e}`
 			);
 		}
 	};
@@ -136,5 +160,6 @@ export const initDatabase = () => {
 		deleteValues,
 		getById,
 		getSorted,
+		getFilteredSorted,
 	};
 };
