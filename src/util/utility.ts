@@ -22,6 +22,10 @@ export const clearContact = (Contact: string) => {
 	return Contact.replace(/\:[0-9]*\@/, '@');
 };
 
+export const getVisibleContactMention = (contactId: string) => {
+	return '@' + clearContact(contactId).split('@')[0];
+};
+
 export const getMyContactFromCredentials = () => {
 	const credFile = fs.readFileSync('./creds/creds.json');
 	let jsonCred = JSON.parse(credFile.toString());
@@ -31,7 +35,7 @@ export const getMyContactFromCredentials = () => {
 
 export const replaceTaggedName = (text: string, tagged: ContactPayload[]) => {
 	const contacts = tagged.map(contact => {
-		const sanitizedId = '@' + contact.id.replace('@s.whatsapp.net', '');
+		const sanitizedId = getVisibleContactMention(contact.id);
 		const publicName = contact.publicName;
 
 		return {
@@ -68,16 +72,28 @@ export const generateHash = async (length: number) => {
 };
 
 export const getFormattedDateAndTime = (date?: number | Date) => {
-	// creating new date with -3 hours to use GMT -3;
-	const threeHours = 1000 * 60 * 3;
-	const now = date ? new Date(date) : new Date(new Date().getTime() - threeHours);
+	const timestamp =
+		typeof date === 'number' && date > 0
+			? date < 1e12
+				? date * 1000
+				: date
+			: date;
+	const now = timestamp ? new Date(timestamp) : new Date();
+	const parts = new Intl.DateTimeFormat('pt-BR', {
+		timeZone: 'America/Sao_Paulo',
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: false,
+	}).formatToParts(now);
+	const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+		parts.find(part => part.type === type)?.value ?? '';
 
-	return `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1)
-		.toString()
-		.padStart(2, '0')}/${now.getFullYear()} às ${now
-		.getHours()
-		.toString()
-		.padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+	return `${getPart('day')}/${getPart('month')}/${getPart('year')} às ${getPart(
+		'hour'
+	)}:${getPart('minute')}`;
 };
 
 export const removeUndefinedEntries = <Obj extends Record<string, any>>(

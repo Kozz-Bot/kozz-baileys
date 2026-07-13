@@ -12,7 +12,11 @@ import { downloadBuffer } from 'src/util/downloadBuffer';
 import { convertJpegToWebp, convertMP4ToWebp } from 'src/MediaConverter';
 import { getMessage } from 'src/Store/MessageStore';
 import { getContactByLid } from 'src/Store/ContactStore';
-import { generateHash, getFormattedDateAndTime } from 'src/util/utility';
+import {
+	generateHash,
+	getFormattedDateAndTime,
+	getVisibleContactMention,
+} from 'src/util/utility';
 import fs from 'fs';
 import {
 	CompanionObject,
@@ -617,7 +621,7 @@ export const inlineCommandMapFunctions = (): Partial<InlineCommandMap> => {
 			companion: {
 				mentions: [...companion.mentions, data.id],
 			},
-			stringValue: '@' + data.id.replace('@s.whatsapp.net', ''),
+			stringValue: getVisibleContactMention(data.id),
 		};
 	};
 

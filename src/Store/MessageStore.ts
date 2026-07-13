@@ -1,7 +1,7 @@
 import { MessageReceived } from 'kozz-types';
 import Context from 'src/Context';
 import { getMedia, saveMedia } from './MediaStore';
-import { getContact, saveContact } from './ContactStore';
+import { getContact, resolveJidFromLid, saveContact } from './ContactStore';
 import { MessageModel } from './models';
 import { proto } from 'baileys';
 
@@ -57,6 +57,11 @@ type RecentChatMessagesArgs = {
 	chatId: string;
 	limit?: number;
 	excludeMessageId?: string;
+};
+
+type MessageCountByContactArgs = {
+	chatId: string;
+	startTimestamp?: number;
 };
 
 export type RecentChatMessage = {
@@ -128,4 +133,69 @@ export const getRecentChatMessages = async ({
 			};
 		})
 	);
+};
+
+export type MessageCountByContact = {
+	contactId: string;
+	count: number;
+	aliases: string[];
+};
+
+const normalizeStartTimestamp = (startTimestamp?: number) => {
+	if (!Number.isFinite(startTimestamp)) {
+		return 0;
+	}
+
+	return Math.max(0, Math.floor(startTimestamp!));
+};
+
+export const getMessageCountByContact = async ({
+	chatId,
+	startTimestamp,
+}: MessageCountByContactArgs): Promise<MessageCountByContact[]> => {
+	const safeStartTimestamp = normalizeStartTimestamp(startTimestamp);
+	const messages =
+		database.getFilteredSorted(
+			'message',
+			'to == $0 AND timestamp >= $1',
+			[chatId, safeStartTimestamp],
+			'timestamp',
+			'asc'
+		) ?? [];
+
+	const counts = messages.reduce<Record<string, number>>((acc, message) => {
+		if (!message.from) {
+			return acc;
+		}
+
+		acc[message.from] = (acc[message.from] ?? 0) + 1;
+		return acc;
+	}, {});
+
+	const mergedCounts: Record<string, MessageCountByContact> = {};
+
+	for (const [contactId, count] of Object.entries(counts)) {
+		const resolvedJid = contactId.endsWith('@lid')
+			? await resolveJidFromLid(contactId)
+			: null;
+		const canonicalContactId = resolvedJid ?? contactId;
+		const contact = await getContact(canonicalContactId);
+		const aliases = [
+			contactId,
+			resolvedJid,
+			contact?.id,
+			contact?.lid,
+		].filter(Boolean) as string[];
+
+		mergedCounts[canonicalContactId] = {
+			contactId: canonicalContactId,
+			count: (mergedCounts[canonicalContactId]?.count ?? 0) + count,
+			aliases: [
+				...(mergedCounts[canonicalContactId]?.aliases ?? []),
+				...aliases,
+			].filter((alias, index, allAliases) => allAliases.indexOf(alias) === index),
+		};
+	}
+
+	return Object.values(mergedCounts).sort((a, b) => b.count - a.count);
 };

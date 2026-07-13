@@ -9,7 +9,10 @@ import {
 	getUnreadCount,
 } from 'src/Store/ChatStore';
 import { getContact } from 'src/Store/ContactStore';
-import { getRecentChatMessages } from 'src/Store/MessageStore';
+import {
+	getMessageCountByContact,
+	getRecentChatMessages,
+} from 'src/Store/MessageStore';
 import { getChatOrder } from 'src/Store/MetadataStore';
 
 export const createResourceGatheres = (
@@ -117,6 +120,20 @@ export const createResourceGatheres = (
 		return getRecentChatMessages({ chatId, limit, excludeMessageId });
 	};
 
+	const _getMessageCount = ({
+		chatId,
+		startTimestamp,
+	}: {
+		chatId?: string;
+		startTimestamp?: number;
+	}) => {
+		if (!chatId) {
+			return console.warn('Tried to fetch message count but no chatId was provided');
+		}
+
+		return getMessageCountByContact({ chatId, startTimestamp });
+	};
+
 	boundary.onAskResource('contact_profile_pic', _getProfilePicUrl);
 	boundary.onAskResource('group_chat_info', _getGroupChatInfo);
 	boundary.onAskResource('group_admin_list', _groupAdminList);
@@ -128,4 +145,5 @@ export const createResourceGatheres = (
 	boundary.onAskResource('all_groups', _getAllGroups);
 	boundary.onAskResource('all_private_chats', _getAllPrivateChats);
 	boundary.onAskResource('recent_chat_messages', _getRecentChatMessages);
+	boundary.onAskResource('message_count', _getMessageCount);
 };
