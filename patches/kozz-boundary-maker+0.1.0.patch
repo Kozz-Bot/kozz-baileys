@@ -1,0 +1,126 @@
+diff --git a/node_modules/kozz-boundary-maker/dist/InlineCommand/parser.js b/node_modules/kozz-boundary-maker/dist/InlineCommand/parser.js
+index 56bd025..14fe97d 100644
+--- a/node_modules/kozz-boundary-maker/dist/InlineCommand/parser.js
++++ b/node_modules/kozz-boundary-maker/dist/InlineCommand/parser.js
+@@ -25,25 +25,103 @@ var __importStar = (this && this.__importStar) || function (mod) {
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.parseMessageBody = void 0;
+ const T = __importStar(require("@guigalleta/t-parser"));
+-const commandParser = T.transform(T.sequenceOf([
+-    T.str('%', 'Command Starter'),
+-    T.regexMatch(/^[^:]+/, 'Command Name'),
+-    T.str(':', 'Command name-payload divider'),
+-    T.regexMatch(/^[^}]+/, 'Command payload'),
+-    T.str('}'),
+-], 'Command'), ({ result }) => ({
+-    type: 'command',
+-    commandName: result[1],
+-    commandData: JSON.parse(result[3] + result[4]),
+-}));
+-const stringParser = T.transform(T.regexMatch(/^[^%]+/, 'Any text'), ({ result }) => ({
+-    type: 'string',
+-    value: result,
+-}));
+-const parser = T.atLeastOne(T.choice([stringParser, commandParser]));
++const readJsonPayload = (input, start) => {
++    if (input[start] !== '{') {
++        return null;
++    }
++    let depth = 0;
++    let inString = false;
++    let escaped = false;
++    for (let i = start; i < input.length; i++) {
++        const char = input[i];
++        if (escaped) {
++            escaped = false;
++            continue;
++        }
++        if (char === '\\') {
++            escaped = true;
++            continue;
++        }
++        if (char === '"') {
++            inString = !inString;
++            continue;
++        }
++        if (inString) {
++            continue;
++        }
++        if (char === '{') {
++            depth++;
++        }
++        if (char === '}') {
++            depth--;
++            if (depth === 0) {
++                return input.slice(start, i + 1);
++            }
++        }
++    }
++    return null;
++};
++const parseInlineCommandAt = (input, start) => {
++    const match = /^%([^:%]+):/.exec(input.slice(start));
++    if (!match) {
++        return null;
++    }
++    const payloadStart = start + match[0].length;
++    const payload = readJsonPayload(input, payloadStart);
++    if (!payload) {
++        return null;
++    }
++    try {
++        return {
++            item: {
++                type: 'command',
++                commandName: match[1],
++                commandData: JSON.parse(payload),
++            },
++            nextIndex: payloadStart + payload.length,
++        };
++    }
++    catch (_a) {
++        return null;
++    }
++};
++const parser = {
++    run: (input) => {
++        const result = [];
++        let stringBuffer = '';
++        for (let i = 0; i < input.length;) {
++            const command = input[i] === '%' ? parseInlineCommandAt(input, i) : null;
++            if (command) {
++                if (stringBuffer) {
++                    result.push({
++                        type: 'string',
++                        value: stringBuffer,
++                    });
++                    stringBuffer = '';
++                }
++                result.push(command.item);
++                i = command.nextIndex;
++                continue;
++            }
++            stringBuffer += input[i];
++            i++;
++        }
++        if (stringBuffer) {
++            result.push({
++                type: 'string',
++                value: stringBuffer,
++            });
++        }
++        return {
++            isError: false,
++            result,
++            errorStack: [],
++            error: '',
++        };
++    },
++};
+ const parseMessageBody = (string) => {
+-    const { isError, result, errorStack, error } = T.parse(string, parser);
+-    console.log({ result, errorStack, error });
++    const { isError, result } = parser.run(string);
+     if (isError) {
+         return [
+             {
