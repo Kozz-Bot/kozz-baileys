@@ -1,9 +1,22 @@
 import { GroupChat } from 'kozz-types';
 import Context from 'src/Context';
-import { GroupChatModel, PrivateChatModel } from './models';
+import { ContactModel, GroupChatModel, PrivateChatModel } from './models';
 import { getContact } from './ContactStore';
 
 const database = Context.get('database');
+
+type PrivateChatSummary = {
+	id: string;
+	name: string;
+};
+
+const isJidLike = (value: string | undefined) =>
+	!!value && /@(lid|s\.whatsapp\.net|g\.us)$/.test(value);
+
+const getContactDisplayName = (contact: ContactModel | null | undefined) => {
+	const names = [contact?.privateName, contact?.publicName];
+	return names.find(name => !!name && !isJidLike(name)) || '';
+};
 
 export const saveGroupChat = async (groupChat: GroupChat): Promise<string> => {
 	await database.upsert('groupChat', {
@@ -111,7 +124,20 @@ export const getAllGroupChats = () => {
 
 export const getAllPrivateChats = () => {
 	try {
-		return database.getValues('privateChat', () => true) ?? [];
+		const privateChats = database.getValues('privateChat', () => true) ?? [];
+		return privateChats.map((chat: PrivateChatModel): PrivateChatSummary => {
+			const contact =
+				(database.getById('contact', chat.id) as ContactModel | null) ||
+				(database.getValues(
+					'contact',
+					(contact: ContactModel) => contact.lid === chat.id
+			)?.[0] as ContactModel | undefined);
+
+			return {
+				id: chat.id,
+				name: getContactDisplayName(contact),
+			};
+		});
 	} catch (e) {
 		console.warn(e);
 		return [];
