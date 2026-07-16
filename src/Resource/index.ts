@@ -8,7 +8,11 @@ import {
 	getGroupChat,
 	getUnreadCount,
 } from 'src/Store/ChatStore';
-import { getContact } from 'src/Store/ContactStore';
+import {
+	getContact,
+	resolveJidFromLid,
+	resolveLidFromJid,
+} from 'src/Store/ContactStore';
 import {
 	getMessageCountByContact,
 	getRecentChatMessages,
@@ -88,6 +92,30 @@ export const createResourceGatheres = (
 		return contactInfo;
 	};
 
+	const _getLidFromJid = async ({ id }: { id: string }) => {
+		if (!id) {
+			return console.warn('Tried to resolve LID but no JID was provided');
+		}
+
+		const lid = await resolveLidFromJid(id);
+		return {
+			id,
+			lid,
+		};
+	};
+
+	const _getJidFromLid = async ({ id }: { id: string }) => {
+		if (!id) {
+			return console.warn('Tried to resolve JID but no LID was provided');
+		}
+
+		const jid = await resolveJidFromLid(id);
+		return {
+			id,
+			jid,
+		};
+	};
+
 	const _chatStatus = () => {
 		return {
 			qr: Context.get('qr'),
@@ -140,6 +168,8 @@ export const createResourceGatheres = (
 	boundary.onAskResource('unread_count', _getUnreadCount);
 	boundary.onAskResource('chat_details', _getChatDetails);
 	boundary.onAskResource('contact_info', _getContactInfo);
+	boundary.onAskResource('lid_from_jid', _getLidFromJid);
+	boundary.onAskResource('jid_from_lid', _getJidFromLid);
 	boundary.onAskResource('chat_order', getChatOrder);
 	boundary.onAskResource('chat_status', _chatStatus);
 	boundary.onAskResource('all_groups', _getAllGroups);

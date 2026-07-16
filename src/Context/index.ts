@@ -12,15 +12,15 @@ type ContextData = {
 	database: ReturnType<typeof initDatabase>;
 };
 
-export const setMeFromCreds = () => {
+export const setMeFromCreds = (creds?: Parameters<typeof getMyContactFromCredentials>[0]) => {
 	let me = {
 		id: '',
 		pushName: '',
 	};
 	try {
-		const meCred = getMyContactFromCredentials();
+		const meCred = getMyContactFromCredentials(creds);
 		me.id = meCred.id;
-		me.pushName = meCred.name;
+		me.pushName = meCred.name || '';
 	} catch (e) {}
 	return me;
 };

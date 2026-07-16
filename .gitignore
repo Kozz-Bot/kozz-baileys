@@ -5,6 +5,7 @@ user_auth
 .env
 .env.dev
 db.sqlite
+baileys-auth.sqlite*
 medias
 default.realm
 default.realm.lock

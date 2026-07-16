@@ -1,7 +1,11 @@
 import { WAMessage, WASocket, proto } from 'baileys';
 import { ContactPayload, GroupChat, MessageReceived } from 'kozz-types';
 import Context from 'src/Context';
-import { getContact, resolveJidFromLid } from 'src/Store/ContactStore';
+import {
+	getContact,
+	resolveJidFromLid,
+	saveLidMappings,
+} from 'src/Store/ContactStore';
 import { getMessage, saveMessage } from 'src/Store/MessageStore';
 import { GroupChatModel } from 'src/Store/models';
 import { downloadMediaFromMessage } from 'src/util/media';
@@ -23,6 +27,30 @@ export const serializeMessageId = (messageId: string): proto.IMessageKey => {
 		participant,
 		remoteJid,
 	};
+};
+
+export const saveLidMappingsFromMessage = async (message: WAMessage) => {
+	const key = message.key;
+	const mappings = [
+		{
+			lid: key.senderLid,
+			pn: key.senderPn,
+		},
+		{
+			lid: key.participantLid,
+			pn: key.participantPn,
+		},
+		{
+			lid: key.participant?.endsWith('@lid') ? key.participant : undefined,
+			pn: key.participantPn,
+		},
+		{
+			lid: key.remoteJid?.endsWith('@lid') ? key.remoteJid : undefined,
+			pn: key.senderPn,
+		},
+	];
+
+	await saveLidMappings(mappings);
 };
 
 export const createContactPayload = async (
@@ -149,6 +177,7 @@ export const createMessagePayload = async (
 	message: WAMessage,
 	waSocket: WASocket
 ): Promise<MessageReceived> => {
+	await saveLidMappingsFromMessage(message);
 	handleEditMessage(message); // check if is edit message
 
 	const media = await downloadMediaFromMessage(message, waSocket);

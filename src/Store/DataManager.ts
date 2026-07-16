@@ -7,6 +7,7 @@ import {
 	messageSchema,
 	privateChatSchema,
 	chatMetadataModel,
+	lidMappingSchema,
 } from './models';
 
 export const initDatabase = () => {
@@ -18,8 +19,9 @@ export const initDatabase = () => {
 			groupChatSchema,
 			chatMetadataModel,
 			privateChatSchema,
+			lidMappingSchema,
 		],
-		schemaVersion: 0,
+		schemaVersion: 1,
 	};
 
 	const instance = new Realm(config);

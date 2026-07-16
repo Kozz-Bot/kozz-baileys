@@ -26,11 +26,34 @@ export const getVisibleContactMention = (contactId: string) => {
 	return '@' + clearContact(contactId).split('@')[0];
 };
 
-export const getMyContactFromCredentials = () => {
-	const credFile = fs.readFileSync('./creds/creds.json');
-	let jsonCred = JSON.parse(credFile.toString());
-	jsonCred.me.id = clearContact(jsonCred.me.id!);
-	return jsonCred.me;
+export const getMyContactFromCredentials = (creds?: {
+	me?: {
+		id?: string;
+		name?: string;
+	};
+}) => {
+	let jsonCred:
+		| {
+				me?: {
+					id?: string;
+					name?: string;
+				};
+		  }
+		| undefined = creds;
+
+	if (!jsonCred) {
+		const credFile = fs.readFileSync('./creds/creds.json');
+		jsonCred = JSON.parse(credFile.toString());
+	}
+
+	if (!jsonCred?.me?.id) {
+		throw new Error('Credentials do not have a WhatsApp contact');
+	}
+
+	return {
+		...jsonCred.me,
+		id: clearContact(jsonCred.me.id),
+	};
 };
 
 export const replaceTaggedName = (text: string, tagged: ContactPayload[]) => {

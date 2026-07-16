@@ -110,6 +110,24 @@ export const contactSchema = {
 	},
 };
 
+export type LidMappingModel = {
+	id: string;
+	lid: string;
+	pn: string;
+	updatedAt: number;
+};
+
+export const lidMappingSchema = {
+	name: 'lidMapping',
+	primaryKey: 'id',
+	properties: {
+		id: 'string',
+		lid: 'string',
+		pn: 'string',
+		updatedAt: 'int',
+	},
+};
+
 export type MediaModel = Overwrite<
 	Media,
 	{
@@ -137,4 +155,5 @@ export type EntityMap = {
 	groupChat: GroupChatModel;
 	chatMetadata: ChatMetadata;
 	privateChat: PrivateChatModel;
+	lidMapping: LidMappingModel;
 };

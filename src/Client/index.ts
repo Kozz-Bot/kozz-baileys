@@ -9,7 +9,6 @@ import makeWASocket, {
 	DisconnectReason,
 	fetchLatestBaileysVersion,
 	makeCacheableSignalKeyStore,
-	useMultiFileAuthState,
 } from 'baileys';
 import log from 'baileys/lib/Utils/logger';
 import { Boom } from '@hapi/boom';
@@ -24,13 +23,15 @@ import {
 	createContactFromSync,
 	createGroupChatPayload,
 	createMessagePayload,
+	saveLidMappingsFromMessage,
 } from 'src/PayloadTransformers';
 import createBoundary from 'kozz-boundary-maker';
-import { saveContact, saveLidMapping } from 'src/Store/ContactStore';
+import { saveContact, saveLidMapping, saveLidMappings } from 'src/Store/ContactStore';
 import { updateChatMetadata } from 'src/Store/MetadataStore';
 import { getMessagePreview } from 'src/util/utility';
 import { groupMemo } from 'src/util/groupMemo';
 import qrCode from 'qrcode';
+import { useSqliteAuthState } from './SqliteAuthState';
 
 export type WaSocket = ReturnType<typeof makeWASocket>;
 
@@ -46,7 +47,7 @@ const startSocket = async (boundary: ReturnType<typeof createBoundary>) => {
 	logger.level = 'error';
 
 	console.log('Creating auth...');
-	const { state, saveCreds } = await useMultiFileAuthState('./creds');
+	const { state, saveCreds } = await useSqliteAuthState();
 	console.log('Done');
 	const { version, isLatest } = await fetchLatestBaileysVersion();
 	console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
@@ -65,7 +66,9 @@ const startSocket = async (boundary: ReturnType<typeof createBoundary>) => {
 		logger,
 		browser: Browsers.ubuntu('Desktop'),
 	});
-	setMeFromCreds();
+	Context.upsert({
+		hostData: setMeFromCreds(state.creds),
+	});
 	sessionEvents(waSocket, saveCreds, boundary);
 
 	return waSocket;
@@ -134,9 +137,14 @@ const sessionEvents = (
 		}
 	});
 
-	waSocket.ev.on('messaging-history.set', (payload: any) => {
+	waSocket.ev.on('messaging-history.set', async (payload: any) => {
 		try {
+			if (Array.isArray(payload.lidPnMappings)) {
+				await saveLidMappings(payload.lidPnMappings);
+			}
+
 			payload.messages.forEach(async (msg: any) => {
+				await saveLidMappingsFromMessage(msg);
 				const payload = await createMessagePayload(msg, waSocket);
 				await saveMessage(payload, msg);
 			});
@@ -158,14 +166,6 @@ const sessionEvents = (
 				updateChatUnreadCount(chat.id, chat.unreadCount);
 			});
 
-			// Persist LID ↔ PN mappings that arrive during history sync
-			if (Array.isArray(payload.lidPnMappings)) {
-				payload.lidPnMappings.forEach(async ({ pn, lid }: { pn: string; lid: string }) => {
-					if (pn && lid) {
-						await saveLidMapping(pn, lid);
-					}
-				});
-			}
 		} catch (e) {
 			console.warn(e);
 		}
@@ -203,6 +203,7 @@ const sessionEvents = (
 	waSocket.ev.on('messages.upsert', async (upsert: any) => {
 		for (const msg of upsert.messages) {
 			console.log(`processando mensagem ${msg.key.id}`);
+			await saveLidMappingsFromMessage(msg);
 			if (msg.message?.stickerMessage) {
 				msg.message.stickerMessage.url = `https://mmg.whatsapp.net${msg.message.stickerMessage.directPath}`;
 			}
