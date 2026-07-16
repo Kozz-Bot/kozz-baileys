@@ -1943,10 +1943,10 @@ kozz-boundary-maker@^0.1.0:
     kozz-types "^0.1.22"
     socket.io-client "^4.8.1"
 
-kozz-types@^0.1.22:
-  version "0.1.22"
-  resolved "https://registry.npmjs.org/kozz-types/-/kozz-types-0.1.22.tgz"
-  integrity sha512-0wiz80moEJWHFKCo9zNKrSm28a3827/5H6r4Ac2wpO77gpAlTN0sMkgLq+PqInOzROo6wGrjbbIAjiJNXx7kBg==
+kozz-types@^0.1.22, kozz-types@^0.1.24:
+  version "0.1.24"
+  resolved "https://registry.npmjs.org/kozz-types/-/kozz-types-0.1.24.tgz"
+  integrity sha512-OQgU3Ja7WaUYT5ljL3F4TOWjLLsEvhI1MmTG+hSZrxuKg4GdED2kBxDSYYQx8LoAGuFPP3MUErb0Y5SAC8CllA==
   dependencies:
     link-module-alias "^1.2.0"
 

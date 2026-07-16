@@ -1,14 +1,9 @@
-import { GroupChat } from 'kozz-types';
+import { GroupChat, PrivateChatSummary } from 'kozz-types';
 import Context from 'src/Context';
 import { ContactModel, GroupChatModel, PrivateChatModel } from './models';
 import { getContact } from './ContactStore';
 
 const database = Context.get('database');
-
-type PrivateChatSummary = {
-	id: string;
-	name: string;
-};
 
 const isJidLike = (value: string | undefined) =>
 	!!value && /@(lid|s\.whatsapp\.net|g\.us)$/.test(value);
