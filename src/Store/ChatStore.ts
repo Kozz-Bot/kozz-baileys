@@ -111,11 +111,7 @@ export const getAllGroupChats = () => {
 
 export const getAllPrivateChats = () => {
 	try {
-		const privateChats = database.getValues('privateChat', () => true) ?? [];
-		return privateChats.map((chat: PrivateChatModel) => ({
-			...chat,
-			contact: database.getById('contact', chat.id) ?? null,
-		}));
+		return database.getValues('privateChat', () => true) ?? [];
 	} catch (e) {
 		console.warn(e);
 		return [];
