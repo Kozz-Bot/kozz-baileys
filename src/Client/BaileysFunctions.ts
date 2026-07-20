@@ -269,6 +269,31 @@ const baileysFunctions = (client: WaSocket) => {
 		}
 	};
 
+	const readMessages = async (messageIds: string[]) => {
+		const messages = await Promise.all(messageIds.map(messageId => getMessage(messageId)));
+		const messageKeys = messages
+			.filter(Boolean)
+			.map(message => {
+				const originalPayload = JSON.parse(
+					message!.originalMessagePayload
+				) as proto.IWebMessageInfo;
+				return originalPayload.key;
+			})
+			.filter(messageKey => messageKey.remoteJid && messageKey.id);
+
+		if (!messageKeys.length) {
+			return {
+				read: 0,
+			};
+		}
+
+		await client.readMessages(messageKeys);
+
+		return {
+			read: messageKeys.length,
+		};
+	};
+
 	/**
 	 * Looks up a contact by its LID (@lid JID).
 	 * Returns the full ContactModel (including phone-number `id`) or null.
@@ -469,13 +494,13 @@ const baileysFunctions = (client: WaSocket) => {
 				mimetype: 'application/was',
 				isAnimated: true,
 			},
-			{
-				upload: client.waUploadToServer,
-				jid: receiverId,
-				logger,
-				mediaTypeOverride: 'sticker',
-			}
-		);
+				{
+					upload: client.waUploadToServer,
+					jid: receiverId,
+					logger,
+					mediaTypeOverride: 'sticker',
+				} as any
+			);
 
 		const stickerMessage = preparedMedia.stickerMessage;
 		if (!stickerMessage) {
@@ -570,6 +595,7 @@ const baileysFunctions = (client: WaSocket) => {
 		reactMessage,
 		getProfilePic,
 		deleteMessage,
+		readMessages,
 		getContactFromLid,
 		sendDebugLottie,
 		sendQuotedStickerAsGeneratedLottie,

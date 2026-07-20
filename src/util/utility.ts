@@ -29,15 +29,17 @@ export const getVisibleContactMention = (contactId: string) => {
 export const getMyContactFromCredentials = (creds?: {
 	me?: {
 		id?: string;
+		lid?: string;
 		name?: string;
 	};
 }) => {
 	let jsonCred:
 		| {
-				me?: {
-					id?: string;
-					name?: string;
-				};
+					me?: {
+						id?: string;
+						lid?: string;
+						name?: string;
+					};
 		  }
 		| undefined = creds;
 
@@ -53,6 +55,7 @@ export const getMyContactFromCredentials = (creds?: {
 	return {
 		...jsonCred.me,
 		id: clearContact(jsonCred.me.id),
+		lid: jsonCred.me.lid ? clearContact(jsonCred.me.lid) : undefined,
 	};
 };
 

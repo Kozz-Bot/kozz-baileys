@@ -63,6 +63,25 @@ const initAuthDatabase = async (db: SqliteDatabase) => {
 const makeStorage = (db: SqliteDatabase) => {
 	const storageKey = (file: string) => fixFileName(file);
 
+	const normalizeLegacySenderKey = (file: string, value: unknown) => {
+		if (!file.startsWith('sender-key-') || !value) {
+			return value;
+		}
+
+		const raw = Buffer.isBuffer(value) ? value.toString('utf-8') : value;
+
+		if (typeof raw !== 'string') {
+			return value;
+		}
+
+		try {
+			const parsed = JSON.parse(raw, BufferJSON.reviver);
+			return Array.isArray(parsed) ? parsed : value;
+		} catch {
+			return value;
+		}
+	};
+
 	const writeData = async (data: unknown, file: string) => {
 		await run(
 			db,
@@ -86,7 +105,9 @@ const makeStorage = (db: SqliteDatabase) => {
 			return null;
 		}
 
-		return JSON.parse(row.value, BufferJSON.reviver) as T;
+		const value = JSON.parse(row.value, BufferJSON.reviver);
+
+		return normalizeLegacySenderKey(file, value) as T;
 	};
 
 	const removeData = async (file: string) => {

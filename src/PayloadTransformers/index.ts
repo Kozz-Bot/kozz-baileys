@@ -3,6 +3,7 @@ import { ContactPayload, GroupChat, MessageReceived } from 'kozz-types';
 import Context from 'src/Context';
 import {
 	getContact,
+	resolveLidFromJid,
 	resolveJidFromLid,
 	saveLidMappings,
 } from 'src/Store/ContactStore';
@@ -10,6 +11,13 @@ import { getMessage, saveMessage } from 'src/Store/MessageStore';
 import { GroupChatModel } from 'src/Store/models';
 import { downloadMediaFromMessage } from 'src/util/media';
 import { clearContact, replaceTaggedName } from 'src/util/utility';
+
+type LidAwareMessageKey = proto.IMessageKey & {
+	senderLid?: string | null;
+	senderPn?: string | null;
+	participantLid?: string | null;
+	participantPn?: string | null;
+};
 
 export const stringifyMessageId = (messageKey: proto.IMessageKey): string => {
 	const { fromMe, remoteJid, id, participant } = messageKey;
@@ -30,35 +38,79 @@ export const serializeMessageId = (messageId: string): proto.IMessageKey => {
 };
 
 export const saveLidMappingsFromMessage = async (message: WAMessage) => {
-	const key = message.key;
+	const key = message.key as LidAwareMessageKey;
 	const mappings = [
 		{
-			lid: key.senderLid,
-			pn: key.senderPn,
+			lid: key.senderLid ?? undefined,
+			pn: key.senderPn ?? undefined,
 		},
 		{
-			lid: key.participantLid,
-			pn: key.participantPn,
+			lid: key.participantLid ?? undefined,
+			pn: key.participantPn ?? undefined,
 		},
 		{
 			lid: key.participant?.endsWith('@lid') ? key.participant : undefined,
-			pn: key.participantPn,
+			pn: key.participantPn ?? undefined,
 		},
 		{
 			lid: key.remoteJid?.endsWith('@lid') ? key.remoteJid : undefined,
-			pn: key.senderPn,
+			pn: key.senderPn ?? undefined,
 		},
 	];
 
 	await saveLidMappings(mappings);
 };
 
+const compact = <T>(items: Array<T | null | undefined>) =>
+	items.filter(Boolean) as T[];
+
+const normalizeContactId = (contactId?: string | null) =>
+	contactId ? clearContact(contactId) : null;
+
+const getHostAliases = async () => {
+	const hostData = Context.get('hostData');
+	const hostId = normalizeContactId(hostData.id);
+	const hostLid = normalizeContactId(hostData.lid);
+	const resolvedPn = hostId?.endsWith('@lid') ? await resolveJidFromLid(hostId) : null;
+	const resolvedLid = hostId?.endsWith('@s.whatsapp.net')
+		? await resolveLidFromJid(hostId)
+		: null;
+
+	return new Set(compact([hostId, hostLid, resolvedPn, resolvedLid]).map(clearContact));
+};
+
+const getMessageAuthorCandidates = (message: WAMessage) => {
+	const key = message.key as LidAwareMessageKey;
+
+	return compact([
+		key.participant,
+		message.participant,
+		key.remoteJid,
+		key.senderPn,
+		key.senderLid,
+		key.participantPn,
+		key.participantLid,
+	]).map(clearContact);
+};
+
+export const isMessageFromHostAccount = async (message: WAMessage) => {
+	if (message.key.fromMe) {
+		return true;
+	}
+
+	const hostAliases = await getHostAliases();
+	const authorCandidates = getMessageAuthorCandidates(message);
+
+	return authorCandidates.some(candidate => hostAliases.has(candidate));
+};
+
 export const createContactPayload = async (
 	message: WAMessage,
 	waSocket?: WASocket
 ): Promise<ContactPayload> => {
+	const isHostAccount = await isMessageFromHostAccount(message);
 	const getContactId = (message: WAMessage) => {
-		if (message.key.fromMe) {
+		if (isHostAccount) {
 			return Context.get('hostData').id;
 		}
 		return message.key.participant || message.participant || message.key.remoteJid!;
@@ -80,7 +132,7 @@ export const createContactPayload = async (
 	return {
 		hostAdded: false,
 		id: contactId,
-		isHostAccount: !!message.key.fromMe,
+		isHostAccount,
 		isBlocked,
 		publicName: message.pushName || '',
 		isGroup: message.key.participant ? true : false,
@@ -110,12 +162,24 @@ export const createtTaggedContactPayload = async (
 	message: WAMessage
 ): Promise<ContactPayload[]> => {
 	let contacts: ContactPayload[] = [];
+	const hostAliases = await getHostAliases();
 	if (message.message?.extendedTextMessage?.contextInfo?.mentionedJid) {
 		for (const contactId of message.message?.extendedTextMessage?.contextInfo
 			?.mentionedJid) {
-			const contact = await getContact(contactId);
+			const normalizedContactId = clearContact(contactId);
+			const contact = await getContact(normalizedContactId);
 			if (contact) {
 				contacts.push(contact);
+			} else if (hostAliases.has(normalizedContactId)) {
+				contacts.push({
+					hostAdded: false,
+					id: Context.get('hostData').id,
+					isHostAccount: true,
+					isBlocked: false,
+					publicName: Context.get('hostData').pushName,
+					isGroup: false,
+					privateName: '',
+				});
 			}
 		}
 	}

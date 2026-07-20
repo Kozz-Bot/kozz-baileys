@@ -14,6 +14,7 @@ export const boundary = createBoundary({
 	url: process.env.GATEWAY_URL || 'ws://localhost:4521',
 	chatPlatform: 'Baileys',
 	name: process.env.BOUNDARY_NAME || 'kozz-baileys',
+	namespace: process.env.KOZZ_NAMESPACE || process.env.NAMESPACE || 'default',
 	inlineCommandMap: inlineCommandMapFunctions(),
 });
 

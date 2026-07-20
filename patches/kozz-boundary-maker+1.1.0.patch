@@ -124,3 +124,45 @@ index 56bd025..14fe97d 100644
      if (isError) {
          return [
              {
+diff --git a/node_modules/kozz-boundary-maker/dist/index.d.ts b/node_modules/kozz-boundary-maker/dist/index.d.ts
+index f91b045..606a0e5 100644
+--- a/node_modules/kozz-boundary-maker/dist/index.d.ts
++++ b/node_modules/kozz-boundary-maker/dist/index.d.ts
+@@ -5,6 +5,7 @@ type InitOptions = {
+     socketPath?: string;
+     chatPlatform: Platform;
+     name: string;
++    namespace?: string;
+     inlineCommandMap?: Partial<InlineCommandMap>;
+ };
+ type EventPayload = {
+@@ -24,7 +25,7 @@ type EventPayload = {
+ type EvCallback = {
+     [evName in keyof EventPayload]: (payload: EventPayload[evName]) => any;
+ };
+-declare const initBoundary: ({ url, socketPath, chatPlatform, name, inlineCommandMap, }: InitOptions) => {
++declare const initBoundary: ({ url, socketPath, chatPlatform, name, namespace, inlineCommandMap, }: InitOptions) => {
+     kozzSocket: import("socket.io-client").Socket<import("@socket.io/component-emitter").DefaultEventsMap, import("@socket.io/component-emitter").DefaultEventsMap>;
+     on: <EvName extends keyof EventPayload>(evName: EvName, handler: EvCallback[EvName]) => void;
+     onAskResource: (resourceName: string, getterFn: (data: any) => any) => void;
+diff --git a/node_modules/kozz-boundary-maker/dist/index.js b/node_modules/kozz-boundary-maker/dist/index.js
+index 91153d5..a404d98 100644
+--- a/node_modules/kozz-boundary-maker/dist/index.js
++++ b/node_modules/kozz-boundary-maker/dist/index.js
+@@ -4,7 +4,7 @@ const socket_io_client_1 = require("socket.io-client");
+ const PayloadSign_1 = require("./util/PayloadSign");
+ const InlineCommand_1 = require("./InlineCommand");
+ const parser_1 = require("./InlineCommand/parser");
+-const initBoundary = ({ url, socketPath, chatPlatform, name, inlineCommandMap, }) => {
++const initBoundary = ({ url, socketPath, chatPlatform, name, namespace = process.env.KOZZ_NAMESPACE || process.env.NAMESPACE || 'default', inlineCommandMap, }) => {
+     const kozzSocket = (0, socket_io_client_1.io)(url, {
+         path: socketPath !== null && socketPath !== void 0 ? socketPath : '/socket.io/',
+     });
+@@ -15,6 +15,7 @@ const initBoundary = ({ url, socketPath, chatPlatform, name, inlineCommandMap, }
+             platform: chatPlatform,
+             role: 'boundary',
+             name,
++            namespace,
+         };
+         kozzSocket.emit('introduction', (0, PayloadSign_1.signPayload)(payload));
+     });

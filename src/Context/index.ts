@@ -7,6 +7,7 @@ type ContextData = {
 	qr: string | null;
 	hostData: {
 		id: string;
+		lid?: string;
 		pushName: string;
 	};
 	database: ReturnType<typeof initDatabase>;
@@ -15,11 +16,13 @@ type ContextData = {
 export const setMeFromCreds = (creds?: Parameters<typeof getMyContactFromCredentials>[0]) => {
 	let me = {
 		id: '',
+		lid: undefined as string | undefined,
 		pushName: '',
 	};
 	try {
 		const meCred = getMyContactFromCredentials(creds);
 		me.id = meCred.id;
+		me.lid = meCred.lid;
 		me.pushName = meCred.name || '';
 	} catch (e) {}
 	return me;

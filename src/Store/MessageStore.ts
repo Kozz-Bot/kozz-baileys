@@ -135,6 +135,53 @@ export const getRecentChatMessages = async ({
 	);
 };
 
+const hydrateRecentMessageWithMedia = async (
+	message: MessageModel
+): Promise<MessageReceived | null> => {
+	const contact = message.contact ? await getContact(message.contact) : null;
+
+	if (!contact) {
+		return null;
+	}
+
+	const media = message.media ? await getMedia(message.media) : undefined;
+
+	return {
+		...message,
+		taggedContacts: JSON.parse(message.taggedContacts || '[]'),
+		contact,
+		quotedMessage: undefined,
+		media,
+	};
+};
+
+export const getRecentChatMessagesWithMedia = async ({
+	chatId,
+	limit,
+	excludeMessageId,
+}: RecentChatMessagesArgs): Promise<MessageReceived[]> => {
+	const safeLimit = normalizeLimit(limit);
+	const query = excludeMessageId ? 'to == $0 AND id != $1' : 'to == $0';
+	const queryArgs = excludeMessageId ? [chatId, excludeMessageId] : [chatId];
+
+	const recentMessages = (
+		database.getFilteredSorted(
+			'message',
+			query,
+			queryArgs,
+			'timestamp',
+			'des',
+			safeLimit
+		) ?? []
+	).reverse();
+
+	const messages = await Promise.all(
+		recentMessages.map(message => hydrateRecentMessageWithMedia(message))
+	);
+
+	return messages.filter(Boolean) as MessageReceived[];
+};
+
 export type MessageCountByContact = {
 	contactId: string;
 	count: number;

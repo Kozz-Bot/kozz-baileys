@@ -16,6 +16,7 @@ import {
 import {
 	getMessageCountByContact,
 	getRecentChatMessages,
+	getRecentChatMessagesWithMedia,
 } from 'src/Store/MessageStore';
 import { getChatOrder } from 'src/Store/MetadataStore';
 
@@ -148,6 +149,24 @@ export const createResourceGatheres = (
 		return getRecentChatMessages({ chatId, limit, excludeMessageId });
 	};
 
+	const _getRecentChatMessagesWithMedia = async ({
+		chatId,
+		limit,
+		excludeMessageId,
+	}: {
+		chatId?: string;
+		limit?: number;
+		excludeMessageId?: string;
+	}) => {
+		if (!chatId) {
+			return console.warn(
+				'Tried to fetch recent messages with media but no chatId was provided'
+			);
+		}
+
+		return getRecentChatMessagesWithMedia({ chatId, limit, excludeMessageId });
+	};
+
 	const _getMessageCount = ({
 		chatId,
 		startTimestamp,
@@ -160,6 +179,14 @@ export const createResourceGatheres = (
 		}
 
 		return getMessageCountByContact({ chatId, startTimestamp });
+	};
+
+	const _chatRead = async ({ messageIds }: { messageIds?: string[] }) => {
+		if (!Array.isArray(messageIds) || !messageIds.length) {
+			return console.warn('Tried to mark chat read but no messageIds were provided');
+		}
+
+		return baileys.readMessages(messageIds);
 	};
 
 	boundary.onAskResource('contact_profile_pic', _getProfilePicUrl);
@@ -175,5 +202,10 @@ export const createResourceGatheres = (
 	boundary.onAskResource('all_groups', _getAllGroups);
 	boundary.onAskResource('all_private_chats', _getAllPrivateChats);
 	boundary.onAskResource('recent_chat_messages', _getRecentChatMessages);
+	boundary.onAskResource(
+		'recent_chat_messages_with_media',
+		_getRecentChatMessagesWithMedia
+	);
 	boundary.onAskResource('message_count', _getMessageCount);
+	boundary.onAskResource('chat_read', _chatRead);
 };
