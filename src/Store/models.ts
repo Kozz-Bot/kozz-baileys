@@ -38,9 +38,9 @@ export const messageSchema = {
 	properties: {
 		id: 'string',
 		platform: 'string',
-		timestamp: 'int',
+		timestamp: { type: 'int', indexed: true },
 		from: 'string',
-		to: 'string',
+		to: { type: 'string', indexed: true },
 		body: 'string',
 		santizedBody: 'string',
 		taggedConctactFriendlyBody: 'string',

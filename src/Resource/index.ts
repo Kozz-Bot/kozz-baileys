@@ -36,14 +36,43 @@ export const createResourceGatheres = (
 	) => {
 		boundary.onAskResource(resourceName, async data => {
 			let timeout: ReturnType<typeof setTimeout> | undefined;
+			const startedAt = Date.now();
+			const shouldAlwaysLog =
+				resourceName === 'recent_chat_messages' ||
+				resourceName === 'recent_chat_messages_with_media';
+			const describeRequest = () => {
+				if (
+					resourceName === 'recent_chat_messages' ||
+					resourceName === 'recent_chat_messages_with_media'
+				) {
+					return ` chatId=${data?.chatId ?? 'unknown'} limit=${
+						data?.limit ?? 'default'
+					} exclude=${data?.excludeMessageId ?? 'none'}`;
+				}
+
+				return '';
+			};
+			if (shouldAlwaysLog) {
+				console.log(`[Resource] ${resourceName} started${describeRequest()}`);
+			}
 
 			try {
-				return await Promise.race([
+				const response = await Promise.race([
 					Promise.resolve(getterFn(data)),
 					new Promise(resolve => {
 						timeout = setTimeout(() => resolve(undefined), timeoutMs);
 					}),
 				]);
+
+				const durationMs = Date.now() - startedAt;
+				if (shouldAlwaysLog || durationMs > 500) {
+					const size = Array.isArray(response) ? response.length : 'n/a';
+					console.log(
+						`[Resource] ${resourceName} completed durationMs=${durationMs} size=${size}${describeRequest()}`
+					);
+				}
+
+				return response;
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.warn(`[Resource] ${resourceName} failed: ${message}`);

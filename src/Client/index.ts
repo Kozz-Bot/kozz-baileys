@@ -51,6 +51,10 @@ import { groupMemo } from 'src/util/groupMemo';
 import { isGroupChatId, isGroupLikeChatId } from 'src/util/chat';
 import { useSqliteAuthState } from './SqliteAuthState';
 
+const qrcodeTerminal = require('qrcode-terminal') as {
+	generate: (input: string, options?: { small?: boolean }) => void;
+};
+
 export type WaSocket = ReturnType<typeof makeWASocket>;
 
 let activeSocket: WaSocket | null = null;
@@ -68,10 +72,49 @@ console.clear();
 console.log('Initializing DB...');
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const GROUP_METADATA_TIMEOUT_MS = 3000;
+const DEFAULT_QUERY_TIMEOUT_MS = Number(
+	process.env.BAILEYS_DEFAULT_QUERY_TIMEOUT_MS || 180000
+);
+
+const withTimeout = async <T>(
+	promise: Promise<T>,
+	ms: number,
+	timeoutMessage: string
+): Promise<T> =>
+	Promise.race([
+		promise,
+		wait(ms).then(() => {
+			throw new Error(timeoutMessage);
+		}),
+	]);
+
+const getCachedGroupMetadata = async (jid: string) => {
+	const groupChat = await getGroupChat(jid);
+	if (!groupChat?.participants?.length) {
+		return undefined;
+	}
+
+	return {
+		id: groupChat.id,
+		subject: groupChat.name,
+		owner: groupChat.owner,
+		desc: groupChat.description,
+		size: groupChat.memberCount,
+		addressingMode: 'pn' as const,
+		linkedParent: groupChat.community ?? undefined,
+		participants: groupChat.participants.map(participant => ({
+			id: participant.id,
+			admin: participant.admin ? ('admin' as const) : null,
+		})),
+	};
+};
 
 export const initSession = (boundary: ReturnType<typeof createBoundary>) => {
 	return startSocket(boundary);
 };
+
+
 
 const startSocket = async (boundary: ReturnType<typeof createBoundary>) => {
 	if (activeSocket) {
@@ -109,10 +152,12 @@ const createSocket = async (boundary: ReturnType<typeof createBoundary>) => {
 			keys: makeCacheableSignalKeyStore(state.keys, logger),
 		},
 		generateHighQualityLinkPreview: true,
+		defaultQueryTimeoutMs: DEFAULT_QUERY_TIMEOUT_MS,
 		msgRetryCounterCache,
 		maxMsgRetryCount: 5,
 		retryRequestDelayMs: 1000,
 		getMessage: getRetryMessage,
+		cachedGroupMetadata: getCachedGroupMetadata,
 		// syncFullHistory: true,
 		logger,
 		browser: Browsers.ubuntu('Desktop'),
@@ -179,14 +224,13 @@ const logConnectionUpdate = (update: any) => {
 	const statusCode = (update.lastDisconnect?.error as Boom | undefined)?.output
 		?.statusCode;
 
-	console.log('CONNECTION UPDATED =>', {
-		connection: update.connection,
-		isOnline: update.isOnline,
-		isNewLogin: update.isNewLogin,
-		receivedPendingNotifications: update.receivedPendingNotifications,
-		hasQr: Boolean(update.qr),
-		statusCode,
-	});
+	console.log(
+		`CONNECTION UPDATED connection=${update.connection ?? 'same'} online=${
+			update.isOnline ?? 'unknown'
+		} newLogin=${update.isNewLogin ?? 'unknown'} pending=${
+			update.receivedPendingNotifications ?? 'unknown'
+		} hasQr=${Boolean(update.qr)} statusCode=${statusCode ?? 'none'}`
+	);
 };
 
 const getLoggedEventType = (event: BaileysMessageEvent) =>
@@ -214,6 +258,8 @@ const formatLoggedBody = (body: string, messageType: string) => {
 
 	return `<${messageType}>`;
 };
+
+const isAiCommandBody = (body: string) => /^[!\/]\s*ai(?:\s|$)/i.test(body.trim());
 
 const getPayloadChatName = async (payload: MessageReceived) => {
 	if (payload.chatId.includes('@g.us')) {
@@ -351,12 +397,23 @@ const handleUserMessage = async (
 		console.log(
 			`Mensagem: [${chatName}]: ${formatLoggedBody(payload.body, payload.messageType)} | ${payload.messageType}`
 		);
+		const isAiCommand = isAiCommandBody(payload.body);
+		if (isAiCommand) {
+			console.log(
+				`[messages.upsert] ai command received messageId=${messageId} chatId=${payload.chatId}`
+			);
+		}
 
 		await saveMessage(payload, msg);
 
 		if (shouldEmitMessages) {
 			boundary.emitMessage(payload);
 			boundary.emitForwardableEvent('chat_message_received', payload);
+			if (isAiCommand) {
+				console.log(
+					`[messages.upsert] ai command emitted messageId=${messageId} chatId=${payload.chatId}`
+				);
+			}
 		} else {
 			console.log(
 				`[messages.upsert] stored ${messageId} without emit for type=append`
@@ -468,8 +525,21 @@ export const getGroupData = async (
 	waSocket: ReturnType<typeof makeWASocket>
 ) => {
 	const resp = await groupMemo
-		.getData(id, () => waSocket.groupMetadata(id))
-		.catch(err => undefined);
+		.getData(id, () =>
+			withTimeout(
+				waSocket.groupMetadata(id),
+				GROUP_METADATA_TIMEOUT_MS,
+				`groupMetadata timed out for ${id}`
+			)
+		)
+		.catch(err => {
+			console.warn(
+				`[groupMetadata] refresh skipped id=${id} error=${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
+			return undefined;
+		});
 	return resp?.data;
 };
 
@@ -493,6 +563,8 @@ const sessionEvents = (
 			logConnectionUpdate(update);
 
 			if (update.qr) {
+				console.log('[baileys] QR received. Scan this code to pair:');
+				qrcodeTerminal.generate(update.qr, { small: true });
 				boundary.emitForwardableEvent('qr_code', update.qr);
 				Context.upsert({
 					qr: update.qr,

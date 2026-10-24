@@ -27,7 +27,7 @@ export const initDatabase = () => {
 			privateChatSchema,
 			lidMappingSchema,
 		],
-		schemaVersion: 2,
+		schemaVersion: 3,
 	};
 
 	const instance = new Realm(config);
@@ -53,11 +53,7 @@ export const initDatabase = () => {
 			return obj;
 		} catch (e) {
 			console.warn(
-				`Error while upserting ${JSON.stringify(
-					data,
-					undefined,
-					'  '
-				)} with data ${data}. No database transaction was done. Error = ${e}`
+				`Error while upserting ${entityType}. No database transaction was done. Error = ${e}`
 			);
 			return undefined;
 		}

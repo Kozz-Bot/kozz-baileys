@@ -4,7 +4,6 @@ import path from 'path';
 import sqlite3 from 'sqlite3';
 import { appPaths } from 'src/InstanceConfig';
 import {
-	AuthenticationCreds,
 	AuthenticationState,
 	BufferJSON,
 	initAuthCreds,
@@ -13,6 +12,7 @@ import {
 } from 'baileys';
 
 type AuthRow = {
+	key?: string;
 	value: string;
 };
 
@@ -75,7 +75,8 @@ const all = <T>(db: SqliteDatabase, sql: string, params: unknown[] = []) =>
 
 const initAuthDatabase = async (db: SqliteDatabase) => {
 	await run(db, 'PRAGMA journal_mode = WAL');
-	await run(db, 'PRAGMA busy_timeout = 5000');
+	await run(db, 'PRAGMA synchronous = NORMAL');
+	await run(db, 'PRAGMA busy_timeout = 30000');
 	await run(
 		db,
 		`CREATE TABLE IF NOT EXISTS baileys_auth_state (
@@ -88,15 +89,15 @@ const initAuthDatabase = async (db: SqliteDatabase) => {
 
 const makeStorage = (db: SqliteDatabase) => {
 	const storageKey = (file: string) => fixFileName(file);
-	let writeQueue = Promise.resolve();
+	let queue = Promise.resolve();
 
-	const enqueueWrite = <T>(operation: () => Promise<T>) => {
-		const pending = writeQueue.catch(() => undefined).then(operation);
-		writeQueue = pending.then(
+	const enqueue = <T>(task: () => Promise<T>) => {
+		const result = queue.then(task, task);
+		queue = result.then(
 			() => undefined,
 			() => undefined
 		);
-		return pending;
+		return result;
 	};
 
 	const normalizeLegacySenderKey = (file: string, value: unknown) => {
@@ -119,11 +120,8 @@ const makeStorage = (db: SqliteDatabase) => {
 	};
 
 	const writeData = async (data: unknown, file: string) => {
-		const key = storageKey(file);
 		const serialized = JSON.stringify(data, BufferJSON.replacer);
-		const updatedAt = Date.now();
-
-		await enqueueWrite(() =>
+		await enqueue(() =>
 			run(
 				db,
 				`INSERT INTO baileys_auth_state (key, value, updated_at)
@@ -131,16 +129,76 @@ const makeStorage = (db: SqliteDatabase) => {
 				 ON CONFLICT(key) DO UPDATE SET
 					value = excluded.value,
 					updated_at = excluded.updated_at`,
-				[key, serialized, updatedAt]
+				[storageKey(file), serialized, Date.now()]
 			)
 		);
 	};
 
+	const writeMany = async (entries: { file: string; data: unknown }[]) => {
+		if (entries.length === 0) {
+			return;
+		}
+
+		await enqueue(async () => {
+			await run(db, 'BEGIN IMMEDIATE TRANSACTION');
+
+			try {
+				const updatedAt = Date.now();
+
+				for (const entry of entries) {
+					await run(
+						db,
+						`INSERT INTO baileys_auth_state (key, value, updated_at)
+						 VALUES (?, ?, ?)
+						 ON CONFLICT(key) DO UPDATE SET
+							value = excluded.value,
+							updated_at = excluded.updated_at`,
+						[
+							storageKey(entry.file),
+							JSON.stringify(entry.data, BufferJSON.replacer),
+							updatedAt,
+						]
+					);
+				}
+
+				await run(db, 'COMMIT');
+			} catch (error) {
+				await run(db, 'ROLLBACK').catch(() => undefined);
+				throw error;
+			}
+		});
+	};
+
+	const removeMany = async (files: string[]) => {
+		if (files.length === 0) {
+			return;
+		}
+
+		await enqueue(async () => {
+			await run(db, 'BEGIN IMMEDIATE TRANSACTION');
+
+			try {
+				for (const file of files) {
+					await run(db, 'DELETE FROM baileys_auth_state WHERE key = ?', [
+						storageKey(file),
+					]);
+				}
+
+				await run(db, 'COMMIT');
+			} catch (error) {
+				await run(db, 'ROLLBACK').catch(() => undefined);
+				throw error;
+			}
+		});
+	};
+
 	const readData = async <T>(file: string): Promise<T | null> => {
-		const row = await get<AuthRow>(
-			db,
-			'SELECT value FROM baileys_auth_state WHERE key = ?',
-			[storageKey(file)]
+		const row = await enqueue(() =>
+			get<AuthRow>(
+				db,
+				'SELECT value FROM baileys_auth_state WHERE key = ?',
+				[storageKey(file)]
+			)
 		);
 
 		if (!row) {
@@ -152,18 +210,58 @@ const makeStorage = (db: SqliteDatabase) => {
 		return normalizeLegacySenderKey(file, value) as T;
 	};
 
+	const readMany = async <T>(
+		files: string[]
+	): Promise<Record<string, T | null>> => {
+		const result: Record<string, T | null> = {};
+
+		if (files.length === 0) {
+			return result;
+		}
+
+		for (const file of files) {
+			result[file] = null;
+		}
+
+		const keys = files.map(storageKey);
+		const placeholders = keys.map(() => '?').join(', ');
+		const rows = await enqueue(() =>
+			all<AuthRow & { key: string }>(
+				db,
+				`SELECT key, value FROM baileys_auth_state WHERE key IN (${placeholders})`,
+				keys
+			)
+		);
+		const keyToFile = new Map(keys.map((key, index) => [key, files[index]]));
+
+		for (const row of rows) {
+			const file = keyToFile.get(row.key);
+			if (!file) {
+				continue;
+			}
+
+			const value = JSON.parse(row.value, BufferJSON.reviver);
+			result[file] = normalizeLegacySenderKey(file, value) as T;
+		}
+
+		return result;
+	};
+
 	const removeData = async (file: string) => {
-		const key = storageKey(file);
-		await enqueueWrite(() =>
-			run(db, 'DELETE FROM baileys_auth_state WHERE key = ?', [key])
+		await enqueue(() =>
+			run(db, 'DELETE FROM baileys_auth_state WHERE key = ?', [
+				storageKey(file),
+			])
 		);
 	};
 
 	const hasData = async (file: string) => {
-		const row = await get<{ key: string }>(
-			db,
-			'SELECT key FROM baileys_auth_state WHERE key = ?',
-			[storageKey(file)]
+		const row = await enqueue(() =>
+			get<{ key: string }>(
+				db,
+				'SELECT key FROM baileys_auth_state WHERE key = ?',
+				[storageKey(file)]
+			)
 		);
 
 		return Boolean(row);
@@ -171,8 +269,11 @@ const makeStorage = (db: SqliteDatabase) => {
 
 	return {
 		writeData,
+		writeMany,
 		readData,
+		readMany,
 		removeData,
+		removeMany,
 		hasData,
 	};
 };
@@ -181,6 +282,10 @@ const migrateMultiFileAuthState = async (
 	authDir: string,
 	storage: ReturnType<typeof makeStorage>
 ) => {
+	if (await storage.hasData('creds.json')) {
+		return;
+	}
+
 	const files = await fs.readdir(authDir).catch(() => []);
 	const jsonFiles = files.filter(file => file.endsWith('.json'));
 
@@ -188,13 +293,7 @@ const migrateMultiFileAuthState = async (
 		return;
 	}
 
-	let migrated = 0;
-
 	for (const file of jsonFiles) {
-		if (await storage.hasData(file)) {
-			continue;
-		}
-
 		const filePath = path.join(authDir, file);
 		const raw = await fs.readFile(filePath, 'utf-8').catch(() => undefined);
 
@@ -203,12 +302,9 @@ const migrateMultiFileAuthState = async (
 		}
 
 		await storage.writeData(JSON.parse(raw, BufferJSON.reviver), file);
-		migrated += 1;
 	}
 
-	if (migrated > 0) {
-		console.log(`Migrated ${migrated} Baileys auth files into SQLite`);
-	}
+	console.log(`Migrated ${jsonFiles.length} Baileys auth files into SQLite`);
 };
 
 export const resetSqliteAuthState = async (
@@ -248,7 +344,7 @@ export const useSqliteAuthState = async (
 	multiFileAuthDir = appPaths.credsDir
 ): Promise<{
 	state: AuthenticationState;
-	saveCreds: (update?: Partial<AuthenticationCreds>) => Promise<void>;
+	saveCreds: () => Promise<void>;
 }> => {
 	const db = createDatabase(dbPath);
 	await initAuthDatabase(db);
@@ -256,14 +352,9 @@ export const useSqliteAuthState = async (
 	const storage = makeStorage(db);
 	await migrateMultiFileAuthState(multiFileAuthDir, storage);
 
-	const storedCreds = await storage.readData<AuthenticationState['creds']>(
+	const creds = (await storage.readData<AuthenticationState['creds']>(
 		'creds.json'
-	);
-	const creds = storedCreds || initAuthCreds();
-
-	if (!storedCreds) {
-		await storage.writeData(creds, 'creds.json');
-	}
+	)) || initAuthCreds();
 
 	return {
 		state: {
@@ -274,29 +365,29 @@ export const useSqliteAuthState = async (
 					ids: string[]
 				) => {
 					const data: { [id: string]: SignalDataTypeMap[T] } = {};
+					const files = ids.map(id => `${type}-${id}.json`);
+					const values = await storage.readMany<SignalDataTypeMap[T]>(files);
 
-					await Promise.all(
-						ids.map(async id => {
-							let value = await storage.readData<SignalDataTypeMap[T]>(
-								`${type}-${id}.json`
-							);
+					for (const id of ids) {
+						const file = `${type}-${id}.json`;
+						let value = values[file];
 
-							if (type === 'app-state-sync-key' && value) {
-								value = proto.Message.AppStateSyncKeyData.fromObject(
-									value
-								) as unknown as SignalDataTypeMap[T];
-							}
+						if (type === 'app-state-sync-key' && value) {
+							value = proto.Message.AppStateSyncKeyData.fromObject(
+								value
+							) as unknown as SignalDataTypeMap[T];
+						}
 
-							if (value) {
-								data[id] = value;
-							}
-						})
-					);
+						if (value) {
+							data[id] = value;
+						}
+					}
 
 					return data;
 				},
 				set: async data => {
-					const tasks: Promise<void>[] = [];
+					const writes: { file: string; data: unknown }[] = [];
+					const removes: string[] = [];
 
 					for (const category in data) {
 						const typedCategory = category as keyof SignalDataTypeMap;
@@ -310,31 +401,24 @@ export const useSqliteAuthState = async (
 							const value = categoryValues[id];
 							const file = `${typedCategory}-${id}.json`;
 
-							tasks.push(
-								value
-									? storage.writeData(value, file)
-									: storage.removeData(file)
-							);
+							if (value) {
+								writes.push({ file, data: value });
+							} else {
+								removes.push(file);
+							}
 						}
 					}
 
-					await Promise.all(tasks);
+					await storage.writeMany(writes);
+					await storage.removeMany(removes);
 				},
 				clear: async () => {
 					await run(db, 'DELETE FROM baileys_auth_state');
 				},
 			},
 		},
-		saveCreds: async update => {
-			if (update) {
-				Object.assign(creds, update);
-			}
-
-			const snapshot = JSON.parse(
-				JSON.stringify(creds, BufferJSON.replacer),
-				BufferJSON.reviver
-			);
-			await storage.writeData(snapshot, 'creds.json');
+		saveCreds: async () => {
+			await storage.writeData(creds, 'creds.json');
 		},
 	};
 };

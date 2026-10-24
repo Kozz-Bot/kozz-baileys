@@ -22,7 +22,10 @@ export const boundary = createBoundary({
 });
 
 createFolderOnInit();
-console.log('Starting kozz-baileys instance', describeInstance());
+const instanceDescription = describeInstance();
+console.log(
+	`Starting kozz-baileys instance boundaryName=${instanceDescription.boundaryName} namespace=${instanceDescription.namespace} instanceId=${instanceDescription.instanceId} instanceRoot=${instanceDescription.instanceRoot}`
+);
 
 const unwrapMessageContainers = (message: any) => {
 	const wrapperCandidates = [
@@ -149,6 +152,19 @@ const buildDebugPayloadAnalysis = (rawPayload: any) => {
 	};
 };
 
+const summarizeDebugPayloadAnalysis = (
+	analysis: ReturnType<typeof buildDebugPayloadAnalysis>
+) =>
+	[
+		`topLevelKeys=${analysis.topLevelMessageKeys.join(',') || 'none'}`,
+		`unwrappedPath=${analysis.unwrappedMessagePath}`,
+		`unwrappedKeys=${analysis.unwrappedMessageKeys.join(',') || 'none'}`,
+		`layers=${analysis.messageLayers.length}`,
+		`botCapabilities=${analysis.botCapabilities?.length ?? 0}`,
+		`hasRichResponse=${analysis.hasRichResponseMessage}`,
+		`contextQuotedKeys=${analysis.contextQuotedMessageKeys.join(',') || 'none'}`,
+	].join(' ');
+
 const getCommandQuotedPayload = (msg: any) => {
 	const messageContent =
 		msg.message?.ephemeralMessage?.message ||
@@ -192,8 +208,8 @@ const safelySend = async (label: string, send: () => Promise<unknown>) => {
 };
 
 initSession(boundary).then(waSocket => {
-	const baileys = baileysFunctions(waSocket);
-	const getBaileys = () => baileysFunctions(getActiveSocket() ?? waSocket);
+	const baileys = baileysFunctions(() => getActiveSocket() || waSocket);
+	const getBaileys = () => baileys;
 
 	CronJob.from({
 		cronTime: '0 */10 * * * *',
@@ -259,8 +275,6 @@ initSession(boundary).then(waSocket => {
 	});
 
 	boundary.handleSendMessage((payload, companion, body) => {
-		console.log({ payload, companion, body });
-
 		return safelySend('send_message', () =>
 			getBaileys().sendText(payload.chatId, body, undefined, companion.mentions)
 		);
@@ -325,12 +339,7 @@ initSession(boundary).then(waSocket => {
 
 				if (!quotedMessage?.originalMessagePayload) {
 					console.log(
-						'[DEBUG QUOTED PAYLOAD] quoted message not found in storage',
-						{
-							commandMessageId: msg.key.id,
-							quotedMessageId,
-							chatId,
-						}
+						`[DEBUG QUOTED PAYLOAD] quoted message not found commandMessageId=${msg.key.id ?? 'unknown'} quotedMessageId=${quotedMessageId} chatId=${chatId}`
 					);
 					await baileys.sendText(
 						chatId,
@@ -340,32 +349,16 @@ initSession(boundary).then(waSocket => {
 					continue;
 				}
 
-				console.log('[DEBUG QUOTED PAYLOAD]', {
-					commandMessageId: msg.key.id,
-					quotedMessageId,
-					chatId,
-				});
 				const rawPayload = JSON.parse(quotedMessage.originalMessagePayload);
-				console.log(JSON.stringify(rawPayload, null, 2));
 				console.log(
-					'[DEBUG QUOTED PAYLOAD ANALYSIS]',
-					JSON.stringify(buildDebugPayloadAnalysis(rawPayload), null, 2)
+					`[DEBUG QUOTED PAYLOAD] commandMessageId=${msg.key.id ?? 'unknown'} quotedMessageId=${quotedMessageId} chatId=${chatId} ${summarizeDebugPayloadAnalysis(buildDebugPayloadAnalysis(rawPayload))}`
 				);
 
 				const commandQuotedPayload = getCommandQuotedPayload(msg);
 				console.log(
-					'[DEBUG COMMAND QUOTED PAYLOAD]',
-					JSON.stringify(commandQuotedPayload ?? null, null, 2)
-				);
-				console.log(
-					'[DEBUG COMMAND QUOTED PAYLOAD ANALYSIS]',
-					JSON.stringify(
-						buildDebugPayloadAnalysis({
-							message: commandQuotedPayload,
-						}),
-						null,
-						2
-					)
+					`[DEBUG COMMAND QUOTED PAYLOAD] ${summarizeDebugPayloadAnalysis(buildDebugPayloadAnalysis({
+						message: commandQuotedPayload,
+					}))}`
 				);
 
 				await baileys.sendText(
